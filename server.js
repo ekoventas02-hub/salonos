@@ -50,7 +50,7 @@ const logger = {
 // salen por Telegram, que es el único canal que sigue funcionando cuando
 // WhatsApp está caído (avisar por WhatsApp de que WhatsApp está caído
 // no tiene sentido).
-const APP_VERSION = '1.3.0'; // SalonOS v1.3 multisalón, correcciones del CRM v5.3 portadas y adaptadas a salón
+const APP_VERSION = '1.3.1'; // SalonOS v1.3.1: v1.3 + sesión WhatsApp en el volumen único (PERSIST_DIR como dataPath, CRM v5.3.7)
 const SERVER_STARTED_AT = Date.now();
 const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
 const TELEGRAM_CHAT_ID = (process.env.TELEGRAM_CHAT_ID || '').trim();
@@ -73,6 +73,12 @@ if (BACKUP_ENCRYPTION_KEY_HEX && !BACKUP_ENCRYPTION_KEY) {
 // PERSIST_DIR=/app/data -> /app/data/uploads y /app/data/backups; en VPS o
 // docker-compose (PERSIST_DIR vacío) -> ./uploads y ./backups de siempre.
 function uploadsDir() { return PERSIST_DIR ? path.join(PERSIST_DIR, 'uploads') : path.join(__dirname, 'uploads'); }
+// v1.3.1 (CRM v5.3.7): UN SOLO VOLUMEN en Railway Trial. LocalAuth usa
+// PERSIST_DIR como dataPath (NO PERSIST_DIR/.wwebjs_auth): la sesión queda
+// en /app/data/session-wa-session-<id>/, en la raíz del volumen, y NO se
+// pierde en cada redespliegue. Sin PERSIST_DIR (VPS/local) sigue en
+// ./.wwebjs_auth relativo al cwd, como siempre.
+function waDataDir() { return PERSIST_DIR || path.resolve('.wwebjs_auth'); }
 function backupsDir() { return PERSIST_DIR ? path.join(PERSIST_DIR, 'backups') : path.join(__dirname, 'backups'); }
 function waMediaDir() { return path.join(uploadsDir(), 'wa-media'); }
 const WA_EXT_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', mp4: 'video/mp4', mp3: 'audio/mpeg', ogg: 'audio/ogg', opus: 'audio/ogg', pdf: 'application/pdf' };
@@ -478,7 +484,7 @@ const initWhatsApp = async (id, name = 'Sin Nombre', channel = 'qr', salonId = n
   logger.info(`Inicializando WhatsApp para: ${name} (ID: ${id})`);
 
   const client = new Client({
-    authStrategy: new LocalAuth({ clientId: `wa-session-${id}` }),
+    authStrategy: new LocalAuth({ clientId: `wa-session-${id}`, dataPath: waDataDir() }),
     puppeteer: {
       headless: true,
       args: [
