@@ -1,0 +1,7 @@
+{
+  "name": "SalonOS v1.3 multisalón",
+  "description": "Sistema multisalón tipo AgendaPro para estilistas y manicuristas en Colombia: agenda, reserva online, POS, comisiones y WhatsApp QR + Meta. v1.3: port completo de las correcciones del CRM v5.3–v5.3.34 (seguridad, Google Calendar, limitadores por usuario, chat paginado, respaldo fail-closed).",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

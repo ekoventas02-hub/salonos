@@ -1,0 +1,89 @@
+# SalonOS multisalón — v1.3 (base crm6, limpieza de código muerto)
+# Instalación:  docker compose up -d --build
+# La app queda en http://localhost:${APP_PORT:-8080}
+# WhatsApp por QR (whatsapp-web.js): la sesión vive en el volumen wa-auth,
+# así no hay que escanear el QR en cada reinicio.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-America/Bogota}
+      POSTGRES_USER: ${POSTGRES_USER:-salonos}
+      # Sin valor por defecto. Sin POSTGRES_PASSWORD en .env, compose
+      # falla rápido con este mensaje en vez de arrancar con la clave
+      # pública 'cambia-esta-clave'.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: ${POSTGRES_DB:-salonos}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-salonos} -d ${POSTGRES_DB:-salonos}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # DATABASE_URL se construye solo en server.js con POSTGRES_* (clave
+      # URL-escapada). Si prefieres ponerla a mano, defínela en .env.
+      TZ: ${TZ:-America/Bogota}
+      PORT: 3000
+      # 0 por defecto = el puerto está expuesto directo y NO se confía en
+      # X-Forwarded-For (si no, cualquiera falsifica su IP y anula el rate
+      # limiting y el bloqueo de login). Pon 1 en .env solo si hay un
+      # reverse proxy real (Caddy/nginx) delante de la app.
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+    ports:
+      - "${APP_PORT:-8080}:3000"
+    volumes:
+      # Logo subido (uploads/logo.png) y sesión de WhatsApp QR sobreviven a reconstrucciones.
+      - uploads:/app/uploads
+      - wa-auth:/app/.wwebjs_auth
+      # Respaldos (backups/*.sql.gz) y estado del sistema en la carpeta local.
+      - ./backups:/app/backups
+      # Paridad con Railway: en Railway el volumen único se monta en
+      # /app/data (PERSIST_DIR=/app/data en .env). En compose es solo un
+      # volumen vacío más; los datos reales siguen en uploads y wa-auth.
+      - appdata:/app/data
+
+  # Respaldo manual bajo demanda (no arranca con `up`, solo a propósito):
+  #   docker compose --profile backup run --rm backup
+  # Hace un pg_dump y lo deja en ./backups/. El respaldo diario automático
+  # (02:00) ya lo hace el propio servidor, esto es solo para hacerlo a mano.
+  # Usa la imagen de la app (tiene pg_dump + node) y el script
+  # scripts/backup-compose.js, que cifra con BACKUP_ENCRYPTION_KEY cuando
+  # está configurada (mismo formato que el respaldo del servidor). Antes
+  # era pg_dump directo en la imagen de postgres y NUNCA cifraba.
+  backup:
+    build: .
+    profiles: ["backup"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-America/Bogota}
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-salonos}
+      # Igual que en el servicio db, sin clave conocida.
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env}
+      PGDATABASE: ${POSTGRES_DB:-salonos}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+      BACKUP_DIR: /backups
+    volumes:
+      - ./backups:/backups
+    command: ["node", "scripts/backup-compose.js"]
+
+volumes:
+  pgdata:
+  uploads:
+  wa-auth:
+  appdata:
